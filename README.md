@@ -9,3 +9,9 @@ This exciting course will provide hands-on training in advanced laboratory and c
 The programme will focus on new technologies for direct RNA sequencing, and complete single molecule cDNA sequencing, single cell RNA sequencing, and the characterisation and analysis of non-coding RNAs (such as lncRNAs and microRNAs). Analysis of the epi-transcriptome, including RNA methylation and modification, will also be covered.
 
 The practical programme will be complemented by distinguished guest speakers, who will present the latest research in this fast-moving field, along with opportunities for informal discussions.
+
+Any reuse of the course materials, data or code is encouraged with due acknowledgement.
+
+******
+## License
+<a rel="license" href="http://creativecommons.org/licenses/by/4.0/"><img alt="Creative Commons Licence" style="border-width:0" src="https://i.creativecommons.org/l/by/4.0/88x31.png" /></a><br />This work is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International License</a>.
