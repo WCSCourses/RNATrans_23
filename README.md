@@ -14,7 +14,11 @@ The practical programme will be complemented by distinguished guest speakers, wh
 
 Any reuse of the course materials, data or code is encouraged with due acknowledgement.
 
-## Instructors
+## Training Team
+- [Prof Francesca Buffa](https://www.oncology.ox.ac.uk/team/francesca-buffa), Department of Oncology, Medical Sciences Division, University of Oxford, UK
+- [Dr Anton Enright](https://www.path.cam.ac.uk/directory/anton-enright), Department of Pathology, University of Cambridge, UK
+- [Prof Ioannis Ragoussis](https://www.mcgillgenomecentre.ca/investigators/ioannis-ragoussis/), McGill Genome Centre, McGill University, Canada
+- [Dr Alena Shkumatava](https://institut-curie.org/personne/alena-shkumatava), Institut Curie, France
 
 ******
 ## License
