@@ -10,6 +10,8 @@ The programme will focus on new technologies for direct RNA sequencing, and comp
 
 The practical programme will be complemented by distinguished guest speakers, who will present the latest research in this fast-moving field, along with opportunities for informal discussions.
 
+[Course website](https://coursesandconferences.wellcomeconnectingscience.org/event/rna-transcriptomics-20230623/)
+
 Any reuse of the course materials, data or code is encouraged with due acknowledgement.
 
 ******
