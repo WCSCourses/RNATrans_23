@@ -1,1 +1,11 @@
-# RNATrans_23
+## Course overview
+
+Rapid advances in genome analysis technology have opened up new and exciting possibilities for studying the transcriptome and its function.
+
+In particular, third generation, single molecule sequencing technologies, and single cell technologies, combined with perturbation tools, allow the analysis of complete RNA species – both short and long – at high resolution. In parallel, these tools have opened new ways in understanding gene function at the tissue, network, and pathway level; as well as detailed characterisation of their function.
+
+This exciting course will provide hands-on training in advanced laboratory and computational methods for the analysis of transcriptomes, including long non-coding RNAs and microRNAs, along with their post-transcriptional and epi-transcriptomic modification.
+
+The programme will focus on new technologies for direct RNA sequencing, and complete single molecule cDNA sequencing, single cell RNA sequencing, and the characterisation and analysis of non-coding RNAs (such as lncRNAs and microRNAs). Analysis of the epi-transcriptome, including RNA methylation and modification, will also be covered.
+
+The practical programme will be complemented by distinguished guest speakers, who will present the latest research in this fast-moving field, along with opportunities for informal discussions.
