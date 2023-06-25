@@ -1,0 +1,932 @@
+---
+title: "miRNA target analysis (DEGs from microRNA mRNA)"
+author: "Andrea Tangherloni, Department of Computing Sciences, Bocconi University  (PI: Prof. Francesca Buffa)"
+date: "June 29, 2023"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+# R Markdown setup
+
+```{r knitrOpts, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Resources and data files
+
+This material has been created using the following resources:
+
+-   [multiMiR vignette](https://bioconductor.org/packages/release/bioc/vignettes/multiMiR/inst/doc/multiMiR.html)
+-   [miRNAtap documentation](https://bioconductor.org/packages/release/bioc/html/miRNAtap.html)
+-   [biomaRt vignette](https://bioconductor.org/packages/release/bioc/vignettes/biomaRt/inst/doc/accessing_other_marts.html)
+
+# Data import
+
+As a first step, we have to load all the packages we need for analyzing these data. Note that you can install them using the BiocManager package.
+
+```{r setup, message = FALSE}
+# BiocManager::install("miRNAtap")
+# BiocManager::install("miRNAtap.db")
+# BiocManager::install("biomaRt")
+# BiocManager::install("multiMiR")
+
+# Load the packaegs
+library("miRNAtap")
+library("miRNAtap.db")
+library("biomaRt")
+library("multiMiR")
+```
+
+## Define the working directory
+
+We can create the path to the base directory for this tutorial (i.e., the directory that contains all the data we need). Please, remember that a path is a string of characters where each directory is represented by path components. These are separated by a delimiting character that generally changes on the different platform. For example, if you used a directory called Andrea on the Desktop of your Virtual Machine as base directory, then a possible path to such directory could be `"/home/user/Desktop/Andrea"`. To build the path in a platform-independent way we can use the `file.path` R function.
+
+```{r setWorkingDir, message = FALSE}
+# Set up the working directory. Uncomment one of the following lines and modify the path accordingly.
+
+# Example on VM
+# baseDir = file.path("/home", "user", "Desktop", "Andrea")
+
+# Example on Windows laptop
+# baseDir = file.path("E:", "Personal", "Courses", "Teaching", "WT2023")
+
+baseDir <- file.path("..", "..")
+
+```
+
+## Define paths to useful directories
+
+Now we can create some other useful paths. These will be relative paths to our project directory. For example, let us create the variables `mrnaDataPath` and `analysisRes` which will contain the path to the directory where we stored the data produced during the first part of the course and the path to a result directory, respectively. For this purpose, we can use again the `file.path` R function.
+
+```{r setUsefulDir, message = FALSE}
+# Path to the directory containing the data
+mrnaDataPath  <- file.path(baseDir, "course_data", "microRNA targets Module", "mRNA")
+mirnaDataPath <- file.path(baseDir, "course_data", "microRNA targets Module", "miRNA")
+
+# Path to the directory where we will store the results
+analysisRes <- file.path(baseDir, "Results")
+
+# Check if this directory exists; otherwise, we create it
+if(!dir.exists(analysisRes)){dir.create(path = analysisRes, showWarnings = F, recursive = T)}
+
+# Set the result directory for miRNA results
+mirnaResDir <- file.path(analysisRes, "miRNA")
+
+# Set dir for mir29
+mirnaResDir.mir29b <- file.path(mirnaResDir, "mir-29b");
+
+# Set dir for top 5 up-regulated and top 5 down-regulated
+mirnaResDir.top5    <- file.path(mirnaResDir, "Top5")
+mirnaResDir.top5.up <- file.path(mirnaResDir.top5, "Up")
+mirnaResDir.top5.dw <- file.path(mirnaResDir.top5, "Down")
+
+# Set dir for predicted and validated targets
+# mir29b, top 5 UP and top 5 DOWN
+mirnaPredResDir.mir29b   <- file.path(mirnaResDir.mir29b, "PredictedTargets")
+mirnaValidResDir.mir29b  <- file.path(mirnaResDir.mir29b, "ValidatedTargets")
+mirnaPredResDir.top5.up  <- file.path(mirnaResDir.top5.up, "PredictedTargets")
+mirnaValidResDir.top5.up <- file.path(mirnaResDir.top5.up, "ValidatedTargets")
+mirnaPredResDir.top5.dw  <- file.path(mirnaResDir.top5.dw, "PredictedTargets")
+mirnaValidResDir.top5.dw <- file.path(mirnaResDir.top5.dw, "ValidatedTargets")
+
+# Create the directories
+if(!dir.exists(mirnaPredResDir.mir29b)) dir.create(path = mirnaPredResDir.mir29b, showWarnings = F, recursive = T)
+if(!dir.exists(mirnaValidResDir.mir29b)) dir.create(path = mirnaValidResDir.mir29b, showWarnings = F, recursive = T)
+if(!dir.exists(mirnaPredResDir.top5.up)) dir.create(path = mirnaPredResDir.top5.up, showWarnings = F, recursive = T)
+if(!dir.exists(mirnaValidResDir.top5.up)) dir.create(path = mirnaValidResDir.top5.up, showWarnings = F, recursive = T)
+if(!dir.exists(mirnaPredResDir.top5.dw)) dir.create(path = mirnaPredResDir.top5.dw, showWarnings = F, recursive = T)
+if(!dir.exists(mirnaValidResDir.top5.dw)) dir.create(path = mirnaValidResDir.top5.dw, showWarnings = F, recursive = T)
+```
+
+## mRNA and miRNA data
+
+For this tutorial, we will use the data you produced during the first part of the course (mRNA and miRNA). Firstly, let's set up the path to the file we want to read. This should be stored in the directory pointed to by the path stored in the `mrnaDataPath` variable.
+
+```{r setExpDataPath, message = FALSE}
+# Set the file name
+DESeq2.filename = "DESeq2_analysis_mRNA"
+
+# Set the file extension
+DESeq2.filext = ".csv"
+
+# Define the path to the file we want to read
+expMRNAPath = file.path(mrnaDataPath, paste0(DESeq2.filename, DESeq2.filext))
+
+# Set the miRNA file name
+mirna.filename = "WT_NREPmiR-29a" #WT_NREPscram
+
+# Set the file extension
+mirna.filext = ".csv"
+
+# Define the path to the file we want to read
+expMiRNAPath = file.path(mirnaDataPath, paste0(mirna.filename, mirna.filext))
+
+```
+
+Now we can read the data. The file was stored as a CSV (Comma-Separated Values) file, so we can import it in R by using the `read.csv` function. To make sure we are reading numerical values, we use the `colClasses` option.
+
+```{r loadExpData, message = FALSE}
+# Read the mRNA
+expMRNA.data = read.csv(file = expMRNAPath, header = T, stringsAsFactors = F, colClasses = c("baseMean"="numeric", "log2FoldChange"="numeric", "lfcSE"="numeric", "stat"="numeric", "pvalue"="numeric", "padj"="numeric"));
+
+#Read the miRNA
+expMiRNA.data = read.csv(file = expMiRNAPath, header = T, colClasses = c("logFC"="numeric", "logCPM"="numeric", "PValue"="numeric", "FDR"="numeric"), stringsAsFactors = F)
+
+```
+
+Let's have a look at the mRNA file
+
+```{r exploreExpData, message = FALSE}
+DT::datatable(data = expMRNA.data)
+```
+
+As we can see, the file contains both Ensembl ids and gene symbols in the columns named `ensgenes` and `gene_symbol`, respectively. Let's save this information in two variables. We will need also the log fold-change and the p-values, so let's save also these values in 2 other variables.
+
+```{r idsCol}
+ensembl.colname.mrna = "ensgenes"
+genesym.colname.mrna = "gene_symbol"
+logfc.colname.mrna   = "log2FoldChange"
+pval.colname.mrna    = "pvalue"
+
+```
+
+Let's have a look at the miRNA file
+
+```{r exploreExpData2, message = FALSE}
+DT::datatable(data = expMiRNA.data)
+```
+
+For the miRNA, we will need the log fold-change, the p-values and the IDs.
+Let's save the information.
+
+```{r idsCol2}
+mirna.colname       = "X";
+logfc.colname.mirna = "logFC"
+pval.colname.mirna  = "PValue"
+
+```
+
+The advantage of saving this information into variables is that in this way the code is easier to maintain.
+
+# Predict and validate the targets for mmu-mir-29b-3p
+
+## Format the data
+
+We want to the extract the miR-29b-3p.
+
+```{r mir29b3pExpr}
+# Select miR-29 family
+expMiRNA.mir29 = expMiRNA.data[grep(pattern = "mmu-mir-29b-3p", expMiRNA.data[,mirna.colname]),];
+print(expMiRNA.mir29)
+```
+
+Select the mir-29b-3p id:
+
+```{r mir29b3pId}
+# Select miR-29 family ids
+expMiRNA.mir29b3p.id = expMiRNA.mir29[,mirna.colname];
+```
+
+## Identify the predicted targets and extract them from the analysis
+
+We can identify the predicted targets for each miRNA using the [miRNAtap](https://bioconductor.org/packages/release/bioc/html/miRNAtap.html) R package. This package allows integration of miRNA target predictions from multiple sources available online. Targets are aggregated from 5 most commonly cited prediction algorithms:
+
+-   DIANA (Maragkakis et al., 2011)
+-   Miranda (Enright et al., 2003)
+-   PicTar (Lall et al., 2006)
+-   TargetScan (Friedman et al., 2009)
+-   miRDB (Wong and Wang, 2015)
+
+Currently predictions are available for Homo sapiens, Mus musculus and Rattus norvegicus.
+
+To get a list of predicted targets for a miRNA id we can use the [getPredictedTargets](https://www.rdocumentation.org/packages/miRNAtap/versions/1.6.0/topics/getPredictedTargets) R function. The resulting object is a data.frame object where row names are entrez IDs of target genes.
+
+```{r mirnatapPredTargets}
+# Predict the targets
+predictedTargets = miRNAtap::getPredictedTargets(mirna=expMiRNA.mir29b3p.id,
+                                                 sources = c("pictar", "diana", "targetscan", "miranda","mirdb"),
+                                                 species = "mmu", min_src = 2, 
+                                                 method = "geom", promote = TRUE, synonyms = TRUE, 
+                                                 both_strands = FALSE)
+
+# Check the structure of the resulting object
+head(predictedTargets)
+```
+
+We want to match the predicted targets with our experimental data, so we need to convert the Entrez ids into Ensembl or symbol ids. For this tutorial we decided to use symbols.
+
+```{r mir29Biomart}
+# Set a BioMart 
+ensembl = biomaRt::useMart(biomart="ensembl", dataset = "mmusculus_gene_ensembl", host = "useast.ensembl.org");
+
+if(!is.null(predictedTargets)){
+    # Convert the predicted targets from entrez gene ids to mgi_symbol symbols
+    attr_output = "mgi_symbol";
+    attr_input = "entrezgene_id";
+    predictedTargets.sym = if(!is.null(predictedTargets)){as.matrix(biomaRt::getBM(attributes=c(attr_output),
+                                                                                   filters = attr_input,
+                                                                                   values = row.names(predictedTargets),
+                                                                                   mart = ensembl, uniqueRows = TRUE))}
+    predictedTargets.sym[,1] = trimws(predictedTargets.sym[,1])
+    
+    # Check if the predicted targets are present in list of DE genes
+    index = match(predictedTargets.sym, expMRNA.data[,genesym.colname.mrna])
+    
+    # Filter the NAs
+    index = index[which(!is.na(index)==TRUE)]
+    
+    # Get the expression of the predicted targets
+    expMRNA = expMRNA.data[index,]
+    
+    # We could store the results as rds object and csv file
+    saveRDS(object = expMRNA, file = file.path(mirnaPredResDir.mir29b, "miRNAtap_predicted_ExpMRNA.rds"));
+    write.csv(x = expMRNA, file = file.path(mirnaPredResDir.mir29b, "miRNAtap_predicted_ExpMRNA.csv"), row.names = F)
+    
+    # Get the number of up- and down-regulated genes (i.e. the ones with absolute value of fold change > 0)
+    n.expMRNA.data.up   = length(expMRNA.data[expMRNA.data[,logfc.colname.mrna,drop=F]>0,genesym.colname.mrna])
+    n.expMRNA.data.down = length(expMRNA.data[expMRNA.data[,logfc.colname.mrna,drop=F]<0,genesym.colname.mrna])
+}
+```
+
+Let's have a look at the data.
+
+```{r}
+if(base::exists(x = "expMRNA")) {DT::datatable(data = expMRNA)}
+```
+
+Now we want to understand the proportion of up-regulated and down-regulated genes. Instead of considering just one fold change value to discriminate between up- and down-regulated, we could create a set of values (i.e. thresholds).
+
+```{r thresholds}
+# Set the thresholds we want to consider
+thresholds = seq(from = 0, to = 3, by = 0.5)
+```
+
+Sometimes it helps to have a pre-allocated object (in this case we will use a `data.frame`). This could improve the speed.
+
+```{r}
+# Create pre-allocated data.frame where to store the results
+df.size = length(thresholds)
+resTable = data.frame(ids=character(df.size),
+                      threshold=numeric(df.size),
+                      n_targets=numeric(df.size),
+                      ratio=numeric(df.size),
+                      proportion=numeric(df.size),
+                      stringsAsFactors = F)
+```
+
+Now we compute an "activation score" for each threshold.
+
+```{r mir29bp3ActivationScore}
+
+for(t.i in 1:length(thresholds)){
+  
+  threshold.i = thresholds[t.i];
+
+  if(!is.null(predictedTargets)){
+
+    #Check if proportion of predicted targets with FC<0 is significantly greater than the proportion of PT with FC>0
+    
+    #Select the genes expressed over the consider threshold
+    expMRNA.up   = expMRNA[which(expMRNA[,logfc.colname.mrna,drop=F]>threshold.i),];
+    expMRNA.down = expMRNA[which(expMRNA[,logfc.colname.mrna,drop=F]<(-threshold.i)),];
+    
+    #Compute the ratio and proportion
+    n.expMRNA.up = length(expMRNA.up[,1]);
+    ratio.up = 1/(length(expMRNA.up[,1])/length(expMRNA.down[,1]));
+    proportion.up = 1/((length(expMRNA.up[,1])/(n.expMRNA.data.up))/(length(expMRNA.down[,1])/n.expMRNA.data.down));
+  } else {
+    n.expMRNA.up = NA;
+    ratio.up = NA;
+    proportion.up = NA;
+  }
+  
+  # Store the results in the table
+  resTable[t.i, ] = c(expMiRNA.mir29b3p.id, threshold.i, n.expMRNA.up, ratio.up, proportion.up)
+  
+}
+
+
+print(resTable)
+
+# Save the results
+resFilePath = file.path(mirnaPredResDir.mir29b, "regulated_multpleT.csv")
+write.csv(x=resTable, file = resFilePath, row.names = T)
+
+```
+
+## Plot the ratio vs FC threshold
+
+We want to plot a miRNA activation score vs the set of pre-defined thresholds.
+
+```{r}
+#Create the plots
+
+mar.default = par()$mar
+{
+par(mfrow=c(1,2), xpd = T, mar = mar.default + c(0,0,0,3))
+plot(x = resTable$threshold, y = resTable$ratio, xlab="FC threshold", 
+     ylab="miRNA activation score (absolute)", main=expMiRNA.mir29b3p.id, 
+     col = "black", ylim=c(0,10)) 
+abline(h = 1, xpd = F, col="red") 
+
+legend(x = 'bottomright',inset = c(-0.6,0), xpd = T,
+       legend = expMiRNA.mir29b3p.id,
+       col = "black", 
+       pch = par("pch"), bty = 'n', xjust = 1,cex=0.6)
+
+plot(x = resTable$threshold, y = resTable$proportion, xlab="FC threshold", 
+     ylab="miRNA activation score (relative)", main=expMiRNA.mir29b3p.id, 
+     col="black", ylim=c(0,10))
+abline(h = 1, xpd = F, col="red")
+
+legend(x = 'bottomright',inset = c(-0.6,0), xpd = T,
+       legend = expMiRNA.mir29b3p.id,
+       col = "black", 
+       pch = par("pch"), bty = 'n', xjust = 1,cex=0.6)
+
+}
+
+```
+
+Let us consider the left plot. Each dot in it represents the ratio between the number of down- and up-regulated predicted mRNA targets of `mmu-mir-29b-3p`. Given that the red horizontal line stands at `1`, dots up the line correspond to an higher number of down-regulated targets than up-regulated ones.
+
+
+## miRNA validated targets
+
+Validated targets for different miRNAs and are available from different databases. For this course, we decided to use the [multiMiR](http://multimir.ucdenver.edu/) database, which contains human and mouse data from 14 external databases, including:
+
+-   three validated miRNA-target databases ( [miRecords](http://c1.accurascience.com/miRecords/), [miRTarBase](http://mirtarbase.mbc.nctu.edu.tw/php/index.php) and [TarBase](http://carolina.imis.athena-innovation.gr/diana_tools/web/index.php?r=tarbasev8%2Findex))
+-   eight predicted miRNA-target databases ( [DIANA-microT](http://diana.imis.athena-innovation.gr/DianaTools/index.php?r=mrmicrot/index), [TargetScan](http://www.targetscan.org/vert_72/), [ElMMo](http://www.clipz.unibas.ch/ElMMo3/), MicroCosm, [miRanda](http://cbio.mskcc.org/miRNA2003/miranda.html), [miRDB](http://www.mirdb.org/), [PicTar](https://pictar.mdc-berlin.de/) and [PITA](https://genie.weizmann.ac.il/pubs/mir07/mir07_prediction.html))
+-   three disease-/drug-related miRNA databases ( [miR2Disease](http://www.mir2disease.org/), [Pharmaco-miR](http://www.pharmaco-mir.org/) and [PhenomiR](http://mips.helmholtz-muenchen.de/phenomir))
+
+### Get the targets
+
+We want to retrieve the validated targets for of mmu-miR-29b-3p using the [multiMiR](https://bioconductor.org/packages/release/bioc/html/multiMiR.html) R package which take advantage of different existing database.
+
+```{r}
+multimirResults = get_multimir(org = 'mmu',
+                               mirna = 'mmu-miR-29b-3p',
+                               table   = 'validated',
+                               summary = FALSE)
+```
+
+We can extract the validated targets ids:
+
+```{r}
+#Extract the validated target symbol from the data structure
+validatedTargets = multimirResults@data$target_symbol;
+
+#Validated targets can be present in multiple databases, so we eliminate the duplicates
+validatedTargets = unique(validatedTargets);
+```
+
+We want now to investigate the retrieved validated targets in our experiments.
+
+```{r}
+########################################################
+# Create table with all validated targets for mir-29b-3p 
+# and attach FC and p-value
+########################################################
+if(length(validatedTargets)>0)
+{
+  
+  index = match(validatedTargets, expMRNA.data[,genesym.colname.mrna])
+  index = index[which(!is.na(index)==TRUE)]
+  validatedTargets.expData = expMRNA.data[index,];
+
+  #We could store the results as rds object
+  saveRDS(object = validatedTargets.expData, file = file.path(mirnaValidResDir.mir29b, "multiMiR_validated_ExpMRNA_DESEq2.rds"));
+  #as csv file
+  write.csv(x = validatedTargets.expData, file = file.path(mirnaValidResDir.mir29b, "multiMiR_validated_ExpMRNA_DESEq2.csv"), row.names = F)
+
+  #See the results
+  print(validatedTargets.expData[1:40, c("log2FoldChange", "pvalue", "stat", "gene_symbol")]);
+}
+```
+
+### Get the targets
+
+We want to retrieve validated targets for the top 5 miRNAs (up- and down-regulated) using the [multiMiR](https://bioconductor.org/packages/release/bioc/html/multiMiR.html) R package which take advantage of different existing database.
+
+```{r}
+#Retrieve the validated targets for mmu-mir29b-3p
+multimirResults <- multiMiR::get_multimir(org = 'mmu',
+                                          mirna   = expMiRNA.mir29b3p.id,
+                                          table   = 'validated',
+                                          summary = FALSE)
+```
+We can extract the validated targets ids:
+
+```{r}
+#Extract the validated target symbol from the data structure
+validatedTargets = multimirResults@data$target_symbol;
+
+#Validated targets can be present in multiple databases, so we eliminate the duplicates
+validatedTargets = unique(validatedTargets);
+```
+
+We want now to investigate the retrieved validated targets in our experiments.
+
+```{r}
+########################################################
+# Create table with all validated targets for mir-29b-3p 
+# and attach FC and p-value
+########################################################
+if(length(validatedTargets)>0) {
+  
+  index = match(validatedTargets, expMRNA.data[,genesym.colname.mrna])
+  index = index[which(!is.na(index)==TRUE)]
+  validatedTargets.expData = expMRNA.data[index,];
+  
+  #We could store the results
+  #as rds object
+  saveRDS(object = validatedTargets.expData, file = file.path(mirnaValidResDir.mir29b, "multiMiR_validated_ExpMRNA.rds"));
+  #as csv file
+  write.csv(x = validatedTargets.expData, file = file.path(mirnaValidResDir.mir29b, "multiMiR_validated_ExpMRNA.csv"), row.names = F)
+  
+  #See the results
+  print(validatedTargets.expData);
+}
+```
+
+# Predict and validate the targets for the 5 most up-regulated and down-regulated miRNAs
+
+Now we could repeat the analysis considering the 5 most up-regulated and down-regulated miRNAs instead of mir-29b-3p.
+
+## Format the data
+
+We want to divide the miRNA data into up-regulated and down-regulated
+
+```{r, echo=FALSE}
+# Divide experimental miRNA into up- and down-regulated
+expMiRNA.up   = expMiRNA.data[which(expMiRNA.data[logfc.colname.mirna]>0),];
+expMiRNA.down = expMiRNA.data[which(expMiRNA.data[logfc.colname.mirna]<0),];
+
+```
+
+For time reasons, we are only going to consider the 5 most up-regulated and down-regulated miRNAs. Let's have a look at the 5 most up-regulated:
+
+```{r}
+# Sort the data according to logFC
+expMiRNA.up = expMiRNA.up[base::order(expMiRNA.up[logfc.colname.mirna], decreasing = T),]
+
+# Select the 5 most up-regulated and down-regulated miRNAs
+endSel = 5; #choose first 5 miRNA from the list
+expMiRNATop.up = expMiRNA.up[1:endSel,];
+
+#Look at the data
+print(expMiRNATop.up)
+```
+
+Now, let's have a look at the most down-regulated:
+
+```{r}
+#Sort the data according to logFC
+expMiRNA.down = expMiRNA.down[base::order(expMiRNA.down[logfc.colname.mirna], decreasing = F),]
+
+#Select the 5 most up-regulated and down-regulated miRNAs
+endSel = 5; #choose first 5 miRNA from the list
+expMiRNATop.down = expMiRNA.down[1:endSel,];
+
+#Look at the data
+print(expMiRNATop.down)
+```
+
+
+```{r}
+# Extract the ids
+expMiRNA.up.ids = expMiRNATop.up[,mirna.colname]
+expMiRNA.down.ids = expMiRNATop.down[,mirna.colname]
+
+# Select the 5 most up-regulated and down-regulated miRNAs
+endSel = 5; #choose first 5 miRNA from the list
+expMiRNATop.up.ids = expMiRNA.up.ids[1:endSel]
+expMiRNATop.down.ids = expMiRNA.down.ids[1:endSel]
+```
+
+## Identify the predicted targets and extract them from the analysis
+
+We can identify the predicted targets for each miRNA using the [miRNAtap](https://bioconductor.org/packages/release/bioc/html/miRNAtap.html) R package. This package allows integration of miRNA target predictions from multiple sources available online. Targets are aggregated from 5 most commonly cited prediction algorithms:
+
+-   DIANA (Maragkakis et al., 2011)
+-   Miranda (Enright et al., 2003)
+-   PicTar (Lall et al., 2006)
+-   TargetScan (Friedman et al., 2009)
+-   miRDB (Wong and Wang, 2015)
+
+Currently predictions are available for Homo sapiens, Mus musculus and Rattus norvegicus.
+
+To get a list of predicted targets for a miRNA id we can use the [getPredictedTargets](https://www.rdocumentation.org/packages/miRNAtap/versions/1.6.0/topics/getPredictedTargets) R function. The resulting object is a data.frame object where row names are entrez IDs of target genes.
+
+Firstly, let's predict the targets.
+
+```{r}
+predictedTargets.up   = list();
+predictedTargets.down = list();
+
+for(miRNA.i in 1:endSel){
+  miRNA.i.up.id   = expMiRNATop.up.ids[miRNA.i]
+  miRNA.i.down.id = expMiRNATop.down.ids[miRNA.i]
+  
+  predictedTargets.up[[miRNA.i]]   = miRNAtap::getPredictedTargets(mirna=miRNA.i.up.id, 
+                                                                   sources = c("pictar", "diana", "targetscan", "miranda","mirdb"),
+                                                                   species = "mmu",
+                                                                   min_src = 2,
+                                                                   method = "geom",
+                                                                   promote = TRUE,
+                                                                   synonyms = TRUE,
+                                                                   both_strands = FALSE)
+
+  predictedTargets.down[[miRNA.i]] = miRNAtap::getPredictedTargets(mirna=miRNA.i.down.id,
+                                                                   sources = c("pictar", "diana", "targetscan", "miranda","mirdb"),
+                                                                   species = "mmu",
+                                                                   min_src = 2,
+                                                                   method = "geom",
+                                                                   promote = TRUE,
+                                                                   synonyms = TRUE,
+                                                                   both_strands = FALSE)
+}
+
+```
+
+We want to match the predicted targets with our experimental data, so we need to convert the Entrez ids into Ensembl or symbol ids. For this tutorial we decided to use symbols. Let's do it for the up-regulated miRNA first.
+
+```{r}
+# Set a BioMart 
+ensembl = biomaRt::useMart(biomart="ensembl", host = "useast.ensembl.org", dataset = "mmusculus_gene_ensembl");
+predictedTargets.sym.up = list();
+
+for(miRNA.i in 1:endSel){
+  miRNA.i.up.id = expMiRNATop.up.ids[miRNA.i];
+  tmp.predictedTargets.up = predictedTargets.up[[miRNA.i]];
+
+  if(!is.null(tmp.predictedTargets.up)){
+  #Convert the predicted targets from entrez gene ids to mgi_symbol symbols
+    attr_output = "mgi_symbol";
+    attr_input = "entrezgene_id";
+    
+    predictedTargets.sym = if(!is.null(tmp.predictedTargets.up)){as.matrix(biomaRt::getBM(attributes=c(attr_output),
+                                                                                          filters = attr_input,
+                                                                                          values = row.names(tmp.predictedTargets.up),
+                                                                                          mart = ensembl,
+                                                                                          uniqueRows = TRUE))}
+    
+    predictedTargets.sym[,1] = trimws(predictedTargets.sym[,1])
+    
+    #Store the converted ids
+    predictedTargets.sym.up[[miRNA.i]] = predictedTargets.sym;
+  }
+
+}
+
+```
+
+Now let's consider the down-regulated.
+
+```{r}
+# Create a list where to store the converted ids
+predictedTargets.sym.dw = list();
+
+for(miRNA.i in 1:endSel){
+  miRNA.i.down.id = expMiRNATop.down.ids[miRNA.i];
+  tmp.predictedTargets.dw = predictedTargets.down[[miRNA.i]];
+  
+  if(!is.null(tmp.predictedTargets.dw)){
+    # Convert the predicted targets from entrez gene ids to mgi_symbol symbols
+    attr_output = "mgi_symbol";
+    attr_input  = "entrezgene_id";
+    
+    predictedTargets.sym = if(!is.null(tmp.predictedTargets.dw)){as.matrix(biomaRt::getBM(attributes=c(attr_output),
+                                                                                          filters = attr_input,
+                                                                                          values = row.names(tmp.predictedTargets.dw),
+                                                                                          mart = ensembl,
+                                                                                          uniqueRows = TRUE))}
+    
+    predictedTargets.sym[,1] = trimws(predictedTargets.sym[,1])
+    
+    # Store the converted ids
+    predictedTargets.sym.dw[[miRNA.i]] = predictedTargets.sym;
+
+  }
+
+}
+```
+
+Now we want to understand the proportion of up-regulated and down-regulated genes. Instead of considering just one fold change value to discriminate between up- and down-regulated, we could create a set of values (i.e. thresholds).
+
+```{r}
+#Set the thresholds we want to consider
+thresholds = seq(from = 0, to = 3, by = 0.5)
+```
+
+Now we can compute an "activation score" for each miRNA, considering the different thresholds. Let's do it for the top5 up-regulated miRNA first.
+
+```{r}
+resTableUp = data.frame(ids=character(df.size),
+                        threshold=numeric(df.size),
+                        n_targets=numeric(df.size),
+                        ratio=numeric(df.size),
+                        proportion=numeric(df.size),
+                        stringsAsFactors = F)
+
+for(miRNA.i in 1:endSel){
+  miRNA.i.up.id   = expMiRNATop.up.ids[miRNA.i];
+  miRNA.i.down.id = expMiRNATop.down.ids[miRNA.i];
+
+  tmp.predictedTargets.up = predictedTargets.up[[miRNA.i]];
+  tmp.predictedTargets.dw = predictedTargets.down[[miRNA.i]];
+  
+  if(!is.null(tmp.predictedTargets.up)){
+    predictedTargets.sym = predictedTargets.sym.up[[miRNA.i]];
+    
+    # Check if the predicted targets are present in list of DE genes
+    index = match(predictedTargets.sym, expMRNA.data[, genesym.colname.mrna])
+    
+    # Filter the NAs
+    index = index[which(!is.na(index)==TRUE)]
+    
+    # Get the expression of the predicted targets
+    expMRNA = expMRNA.data[index,]
+    
+    # We can store the results as a rds object and a csv file
+    saveRDS(object = expMRNA, file = file.path(mirnaPredResDir.top5.up, paste0(miRNA.i.up.id,"_miRNAtap_ExpMRNA.rds")));
+    write.csv(x = expMRNA, file = file.path(mirnaPredResDir.top5.up, paste0(miRNA.i.up.id, "_miRNAtap_ExpMRNA.csv")), row.names = F)
+    
+    # Get the number of up- and down-regulated genes (i.e. the ones with absolute value of fold change > 0)
+    n.expMRNA.data.up   = length(expMRNA.data[expMRNA.data[, logfc.colname.mrna, drop=F]>0, genesym.colname.mrna])
+    n.expMRNA.data.down = length(expMRNA.data[expMRNA.data[, logfc.colname.mrna, drop=F]<0, genesym.colname.mrna])
+  }
+  
+  for(t.i in 1:length(thresholds)){
+    
+    threshold.i = thresholds[t.i];
+    ###############################
+    # up-regulated 
+    ###############################
+    if(!is.null(tmp.predictedTargets.up)){
+
+      
+      expMRNA.up   = expMRNA[which(expMRNA[, logfc.colname.mrna]>threshold.i),];
+      expMRNA.down = expMRNA[which(expMRNA[, logfc.colname.mrna]<(-threshold.i)),];
+      
+      #Compute the ratio and proportion
+      n.expMRNA.up = length(expMRNA.up[,1]);
+      ratio.up = 1/(length(expMRNA.up[,1])/length(expMRNA.down[,1]));
+      proportion.up = 1/((length(expMRNA.up[,1])/(n.expMRNA.data.up))/(length(expMRNA.down[,1])/n.expMRNA.data.down));
+    } 
+    else {
+      n.expMRNA.up  = NA;
+      ratio.up      = NA;
+      proportion.up = NA;
+    }
+    
+    # resTableUp[miRNA.i.up.id,] = cbind(threshold.i, n.expMRNA.up, ratio.up, proportion.up);
+    resTableUp[t.i + (miRNA.i-1)*length(thresholds), ] = c(miRNA.i.up.id, threshold.i, n.expMRNA.up, ratio.up, proportion.up)
+  }
+  
+}
+
+```
+
+Now let's consider the down-regulated.
+
+```{r}
+df.size = endSel*length(thresholds);
+
+resTableDown = data.frame(ids=character(df.size),
+                          threshold=numeric(df.size),
+                          n_targets=numeric(df.size),
+                          ratio=numeric(df.size),
+                          proportion=numeric(df.size),
+                          stringsAsFactors = F)
+
+for(miRNA.i in 1:endSel){
+  miRNA.i.down.id = expMiRNATop.down.ids[miRNA.i];
+  tmp.predictedTargets.dw = predictedTargets.down[[miRNA.i]];
+  
+  if(!is.null(tmp.predictedTargets.dw)){
+    predictedTargets.sym = predictedTargets.sym.dw[[miRNA.i]];
+    
+    # Check if the predicted targets are present in list of DE genes
+    index = match(predictedTargets.sym, expMRNA.data[, genesym.colname.mrna])
+    
+    # Filter the NAs
+    index = index[which(!is.na(index)==TRUE)]
+    
+    # Get the expression of the predicted targets
+    expMRNA = expMRNA.data[index,]
+    
+    # We can store the results a rds object and as csv file
+    saveRDS(object = expMRNA, file = file.path(mirnaPredResDir.top5.dw, paste0(miRNA.i.down.id,"_miRNAtap_ExpMRNA.rds")));
+    write.csv(x = expMRNA, file = file.path(mirnaPredResDir.top5.dw, paste0(miRNA.i.down.id, "_miRNAtap_ExpMRNA.csv")), row.names = F)
+    
+    # Get the number of up- and down-regulated genes (i.e. the ones with absolute value of fold change > 0)
+    n.expMRNA.data.up   = length(expMRNA.data[expMRNA.data[, logfc.colname.mrna, drop=F]>0, genesym.colname.mrna])
+    n.expMRNA.data.down = length(expMRNA.data[expMRNA.data[, logfc.colname.mrna, drop=F]<0, genesym.colname.mrna])
+  }
+  
+  for(t.i in 1:length(thresholds)){
+    
+    threshold.i = thresholds[t.i];
+    ###############################
+    # up-regulated 
+    ###############################
+    if(!is.null(tmp.predictedTargets.dw)){
+      
+      expMRNA.up   = expMRNA[which(expMRNA[, logfc.colname.mrna]>threshold.i),];
+      expMRNA.down = expMRNA[which(expMRNA[, logfc.colname.mrna]<(-threshold.i)),];
+      
+      #Compute the ratio and proportion
+      n.expMRNA.down = length(expMRNA.up[,1]);
+      ratio.down = length(expMRNA.up[,1])/length(expMRNA.down[,1]);
+      proportion.down = (length(expMRNA.up[,1])/(n.expMRNA.data.up))/(length(expMRNA.down[,1])/n.expMRNA.data.down);
+    }
+    else {
+      n.expMRNA.down  = NA;
+      ratio.down      = NA;
+      proportion.down = NA;
+    }
+    
+    resTableDown[t.i + (miRNA.i-1)*length(thresholds), ] = c(miRNA.i.down.id, threshold.i, n.expMRNA.down, ratio.down, proportion.down)
+  }
+  
+}
+```
+
+## Plot the ratio vs FC threshold
+
+We want to plot a miRNA activation score vs a set of pre-defined thresholds.
+
+```{r}
+#1) set up the colours: each miRNA will have the same colour
+random_colors = grDevices::rainbow(endSel*2, s = 0.8, v = 1, alpha = 0.9)
+p.colors = data.frame(ids=c(unique(resTableUp$ids), unique(resTableDown$ids)), colors=random_colors, stringsAsFactors = F)
+
+col.dw = p.colors[match(resTableDown$ids, p.colors$ids),]
+col.up = p.colors[match(resTableUp$ids, p.colors$ids),]
+
+#2) plot it and store it as pdf
+#pdf(file = file.path(resDirPath, "scatterplot.pdf"), width = 9, height = 7)
+mar.default = par()$mar
+{
+par(mfrow=c(1,2), xpd = T, mar = mar.default + c(0,0,0,3))
+plot(x = resTableDown$threshold, y = resTableDown$ratio, xlab="FC threshold", 
+     ylab="miRNA activation score (absolute)", main=paste(endSel, "most down-regulated miRNAs"), 
+     col=col.dw$colors, ylim=c(0,10)) 
+abline(h = 1, xpd = F, col="red") 
+
+legend(x = 'bottomright',inset = c(-0.6,0), xpd = T,
+       legend = as.character(unique(resTableDown$ids)),
+       col = p.colors[p.colors$ids==unique(resTableDown$ids),2], 
+       pch = par("pch"), bty = 'n', xjust = 1,cex=0.6)
+
+
+plot(x = resTableUp$threshold, y = resTableUp$ratio, xlab="FC threshold", 
+     ylab="miRNA activation score (absolute)", main=paste(endSel, "most up-regulated miRNAs"), 
+     col=col.up$colors, ylim=c(0,10))
+abline(h = 1, xpd = F, col="red")
+
+legend(x = 'bottomright',inset = c(-0.6, 0), xpd = T,
+       legend = as.character(unique(resTableUp$ids)),
+       col = p.colors[p.colors$ids==unique(resTableUp$ids),2], 
+       pch = par("pch"), bty = 'n', xjust = 1,cex=0.6)
+}
+#dev.off()
+
+
+```
+
+## Plot the proportion vs FC threshold
+
+```{r}
+{
+par(mfrow=c(1,2), xpd = T, mar = mar.default + c(0,0,0,3))
+plot(x = resTableDown$threshold, y = resTableDown$proportion, xlab="FC threshold", 
+     ylab="miRNA activation score (relative)", main=paste(endSel, "most down-regulated miRNAs"), 
+     col=col.dw$colors, ylim=c(0,10))
+abline(h = 1, xpd = F, col="red")
+
+legend(x = 'bottomright',inset = c(-0.6,0), xpd = T,
+       legend = as.character(unique(resTableDown$ids)),
+       col = p.colors[p.colors$ids==unique(resTableDown$ids),2], 
+       pch = par("pch"), bty = 'n', xjust = 1,cex=0.6)
+
+plot(x = resTableUp$threshold, y = resTableUp$proportion, xlab="FC threshold", 
+     ylab="miRNA activation score (relative)", main=paste(endSel, "most up-regulated miRNAs"), 
+     col=col.up$colors, ylim=c(0,10))
+abline(h = 1, xpd = F, col="red")
+
+legend(x = 'bottomright',inset = c(-0.6, 0), xpd = T,
+       legend = as.character(unique(resTableUp$ids)),
+       col = p.colors[p.colors$ids==unique(resTableUp$ids),2], 
+       pch = par("pch"), bty = 'n', xjust = 1,cex=0.6)
+
+}
+```
+
+## miRNA validated targets
+
+Validated targets for different miRNAs and are available from different databases. For this course, we decided to use the [multiMiR](http://multimir.ucdenver.edu/) database, which contains human and mouse data from 14 external databases, including:
+
+-   three validated miRNA-target databases ( [miRecords](http://c1.accurascience.com/miRecords/), [miRTarBase](http://mirtarbase.mbc.nctu.edu.tw/php/index.php) and [TarBase](http://carolina.imis.athena-innovation.gr/diana_tools/web/index.php?r=tarbasev8%2Findex))
+-   eight predicted miRNA-target databases ( [DIANA-microT](http://diana.imis.athena-innovation.gr/DianaTools/index.php?r=mrmicrot/index), [TargetScan](http://www.targetscan.org/vert_72/), [ElMMo](http://www.clipz.unibas.ch/ElMMo3/), MicroCosm, [miRanda](http://cbio.mskcc.org/miRNA2003/miranda.html), [miRDB](http://www.mirdb.org/), [PicTar](https://pictar.mdc-berlin.de/) and [PITA](https://genie.weizmann.ac.il/pubs/mir07/mir07_prediction.html))
+-   three disease-/drug-related miRNA databases ( [miR2Disease](http://www.mir2disease.org/), [Pharmaco-miR](http://www.pharmaco-mir.org/) and [PhenomiR](http://mips.helmholtz-muenchen.de/phenomir))
+
+### Get the targets
+
+We want to retrieve validated targets for the top 5 miRNAs (up- and down-regulated) using the [multiMiR](https://bioconductor.org/packages/release/bioc/html/multiMiR.html) R package which take advantage of different existing database.
+
+```{r}
+
+validatedTargetsUp   = list();
+validatedTargetsDown = list();
+# miRNA.i = 3 #debug
+
+for(miRNA.i in 1:endSel){
+  
+  miRNA.i.up.id      <- expMiRNATop.up.ids[miRNA.i];
+  multimirResults.up <- multiMiR::get_multimir(org     = 'mmu',
+                                               mirna   = miRNA.i.up.id,
+                                               table   = 'validated',
+                                               summary = FALSE)
+  
+  validatedTargetsUp[[miRNA.i.up.id]] <- multimirResults.up@data$target_symbol;
+
+  miRNA.i.down.id      <- expMiRNATop.down.ids[miRNA.i];
+  multimirResults.down <- multiMiR::get_multimir(org     = 'mmu',
+                                                 mirna   = miRNA.i.down.id,
+                                                 table   = 'validated',
+                                                 summary = FALSE);
+  
+  validatedTargetsDown[[miRNA.i.down.id]] <- multimirResults.down@data$target_symbol;
+}
+
+```
+
+We want now to investigate the retrieved validated targets in our experiments. Let's look first at the top up-regulated.
+
+```{r}
+#####################################################
+# Create table with all validated targets for top 5 
+# miRNAs (up) and attach FC and p-value
+#####################################################
+validatedTargetsUp.fc = list()
+
+#Top up-regulated
+if(length(validatedTargetsUp)>0) {
+  for(miRNA.i in 1:length(validatedTargetsUp)){
+    
+    miRNA.i.up.id = names(validatedTargetsUp)[miRNA.i]
+    index = match(validatedTargetsUp[[miRNA.i.up.id]], expMRNA.data[, genesym.colname.mrna])
+    index = index[which(!is.na(index)==TRUE)]
+    expMRNA.up = expMRNA.data[index,]
+    validatedTargetsUp.fc[[miRNA.i.up.id]] = expMRNA.up[, c(2,3,4)];
+    
+    # We can store the results as an rds object and a csv file
+    saveRDS(object = expMRNA.up, file = file.path(mirnaValidResDir.top5.up, paste0(miRNA.i.up.id,"_multiMiR_ExpMRNA.rds")))
+    write.csv(x = expMRNA.up, file = file.path(mirnaValidResDir.top5.up, paste0(miRNA.i.up.id,"_multiMiR_ExpMRNA.csv")), row.names = F)
+      
+    print(validatedTargetsUp.fc[[miRNA.i.up.id]])
+  }
+}
+
+```
+
+Finally, let's consider the top down-regulated.
+
+```{r}
+#####################################################
+# Create table with all validated targets for top 5 
+# miRNAs (down) and attach FC and p-value
+#####################################################
+validatedTargetsDown.fc = list()
+
+# Top down-regulated
+if(length(validatedTargetsDown)>0){
+  miRNA.i = 1#debug
+  for(miRNA.i in 1:length(validatedTargetsDown)){
+    miRNA.i.down.id = names(validatedTargetsDown)[miRNA.i]
+    index = match(validatedTargetsDown[[miRNA.i.down.id]], expMRNA.data[,genesym.colname.mrna])
+    index = index[which(!is.na(index)==TRUE)]
+    expMRNA.down = expMRNA.data[index,]
+    validatedTargetsDown.fc[[miRNA.i.down.id]] = expMRNA.down[, c(2,3,4)]
+    
+  # We could store the results as an rds object and a csv file
+  saveRDS(object = expMRNA.down, file = file.path(mirnaValidResDir.top5.dw, paste0(miRNA.i.down.id,"_multiMiR_ExpMRNA.rds")));
+  write.csv(x = expMRNA.down, file = file.path(mirnaValidResDir.top5.dw, paste0(miRNA.i.down.id,"_multiMiR_ExpMRNA.csv")), row.names = F)
+    
+    print(validatedTargetsDown.fc[[miRNA.i.down.id]])
+  }
+}
+
+```
+
+# Session Info
+
+The version number of R and packages loaded for generating this tutorial. It is always helpful to report this information.
+
+```{r}
+sessionInfo()
+```
