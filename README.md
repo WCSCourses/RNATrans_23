@@ -21,7 +21,7 @@ Any reuse of the course materials, data or code is encouraged with due acknowled
 - [Dr Alena Shkumatava](https://institut-curie.org/personne/alena-shkumatava), Institut Curie, France
 
 ## Practicals
-Enright Lab Practicals(https://github.com/EnrightLab/Courses-and-Practicals/tree/master/WTAC_RNA_Transcriptomics_2023)
+[Enright Lab Practicals](https://github.com/EnrightLab/Courses-and-Practicals/tree/master/WTAC_RNA_Transcriptomics_2023)
 
 ******
 ## License
