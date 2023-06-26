@@ -38,6 +38,9 @@ root.directory <- dirname(rstudioapi::getActiveDocumentContext()$path)
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 knitr::opts_knit$set(root.dir = root.directory)
 
+dir.create("Write/Figures/", recursive = T)
+dir.create("Write/Tables/", recursive = T)
+
 options(stringsAsFactors = FALSE)
 ```
 
@@ -51,19 +54,18 @@ options(stringsAsFactors = FALSE)
 
 -   The final command below sets the directory this file is in to be the active directory for this session. This is crucial for the ***read*** and ***write*** functions below to work effectively since they use relative rather than absolute filepaths (if you are not sure what the difference between relative and absolute filepaths is, please check [**here**](https://www.codingrooms.com/blog/file-paths#:~:text=A%20relative%20path%20describes%20the,regularly%20use%20relative%20file%20paths.)).
 
-```{r warning=FALSE}
-# Package Installation
-install.packages(c("tidyverse","Seurat", "SCpubr"))
-BiocManager::install("scater")
-
+```{r Packages, warning=FALSE}
 # Packages
 suppressMessages(library(tidyverse))
 suppressMessages(library(Seurat))
 suppressMessages(library(SCpubr))
 suppressMessages(library(scater))
+suppressMessages(library(org.Mm.eg.db))
+suppressMessages(library(clusterProfiler))
+
 
 #Setting Working Directory
-setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+# setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 ```
 
 # 1. Data Import
@@ -94,7 +96,7 @@ scr2 <- Read10X(data.dir = "../../course_data//scRNA-Seq Module/WTAC_SCRNA801250
 
 -   Here, we are merge the three samples (WT1, SCR1, SCR2) into one expression matrix. We add the sample of origin in each of the cells, so that later we can retrieve the information.
 
-```{r}
+```{r Data-Import}
 # WT
 w1 <- as.matrix(wt1)
 colnames(w1) <- paste(colnames(w1),"w1", sep = "_")
@@ -122,7 +124,7 @@ rm(w1, wt1, s1, scr1, s2, scr2)
 
 -   The next step here is the calculation of the percentage of counts attributed to mitochondrial genes. This is another important QC metric.
 
-```{r}
+```{r Seurat-Object}
 # Seurat Object Instantiation
 seu <- CreateSeuratObject(counts = x, project = "RNA-transcriptomics")
 
@@ -161,11 +163,14 @@ view(seu@meta.data)
 
 ### 3.1.1. Library Size
 
-```{r, fig.height= 4, fig.width= 4}
+```{r QC-Library-Size, fig.height=6, fig.width=6}
 # Violin Plot
 VlnPlot(object = seu,
         features = "nCount_RNA",
-        group.by = "condition")
+        group.by = "condition") + labs(title = "Library Size")
+ggsave(filename = "Write/Figures/Library Size Violin Plot.tiff",
+       height = 10,
+       width = 10)
 
 # MAD Thresholds
 outlier_counts <- isOutlier(metric = seu@meta.data$nCount_RNA,
@@ -179,15 +184,21 @@ seu@meta.data %>% ggplot(aes(x = nCount_RNA)) +
                                                y = "Frequency",
                                                title = "Library Size Histogram") + 
   facet_grid(condition ~ .) + geom_vline(xintercept = counts_thresholds)
+ggsave(filename = "Write/Figures/Library Size Histogram.tiff",
+       height = 10,
+       width = 10)
 ```
 
 ### 3.1.2. Total features
 
-```{r, fig.height=4, fig.width=4}
+```{r QC-Total-Features, fig.height=6, fig.width=6}
 # Violin Plot
 VlnPlot(object = seu,
         features = "nFeature_RNA",
-        group.by = "condition")
+        group.by = "condition") + labs(title = "Total Features")
+ggsave(filename = "Write/Figures/Total Features Violin Plot.tiff",
+       height = 10,
+       width = 10)
 
 # MAD Thresholds
 outlier_features <- isOutlier(metric = seu@meta.data$nFeature_RNA,
@@ -201,15 +212,21 @@ seu@meta.data %>% ggplot(aes(x = nFeature_RNA)) +
                                                y = "Frequency",
                                                title = "Total Features Histogram") +
   facet_grid(condition ~ .) + geom_vline(xintercept = features_thresholds)
+ggsave(filename = "Write/Figures/Total Features Histogram.tiff",
+       height = 10,
+       width = 10)
 ```
 
 ### 3.1.3. Percentage Mitochondrial Genes
 
-```{r, fig.height=4, fig.width=4}
+```{r, QC-Mitochondrial-Genes,fig.height=6, fig.width=6}
 # Violin Plot
 VlnPlot(object = seu,
         features = "percent.mt",
-        group.by = "condition")
+        group.by = "condition") + labs(title = "% Mitochondrial Genes")
+ggsave(filename = "Write/Figures/Percentage Mitochondrial Genes Violin Plot.tiff",
+       height = 10,
+       width = 10)
 
 # Histogram
 seu@meta.data %>% ggplot(aes(x = percent.mt)) + 
@@ -217,6 +234,9 @@ seu@meta.data %>% ggplot(aes(x = percent.mt)) +
                                                y = "Frequency",
                                                title = "% Mitocondrial Features Histogram") +
   facet_grid(condition ~ .) + geom_vline(xintercept = 15)
+ggsave(filename = "Write/Figures/Percentage Mitochondrial Genes Histogram.tiff",
+       height = 10,
+       width = 10)
 ```
 
 ### 3.1.3. Combined Scatter Plot
@@ -227,7 +247,7 @@ seu@meta.data %>% ggplot(aes(x = percent.mt)) +
 
 -   From the figure, it becomes clear that the thresholds set are rather conservative, and the bulk of the data is presered with only outliers being removed.
 
-```{r,fig.height=4, fig.width=4}
+```{r,Combined-Scatter-Plot,fig.height=6, fig.width=6}
 # ScatterPlot
 seu@meta.data %>%
   ggplot(aes(nCount_RNA,
@@ -240,13 +260,18 @@ seu@meta.data %>%
        color = "% Mitochondrial Genes") + 
   scale_color_viridis_c() + 
   facet_grid(condition ~ .) + geom_vline(xintercept = counts_thresholds) + geom_hline(yintercept = features_thresholds)
+ggsave(filename = "Write/Figures/QC Metrics Scatter Plot.tiff",
+       height = 15,
+       width = 10)
 ```
 
 ### 3.1.4. Cell Filtration
 
-Here, we apply the three cell filters. This results in the removal of 455 cells, which is good enough and indicates that the thresholds being set are not too stringent on the data..
+-   Here, we apply the three cell filters. This results in the removal of 455 cells, which is good enough and indicates that the thresholds being set are not too stringent on the data.
 
-```{r}
+-   The final step here is the removal of the seu object we have been using thusfar for memory conservation. In this course, the data size is not substantial and so we can get away with keeping the object; however, when dealing with larger datasets, memory constraints become a substantial
+
+```{r Cell-Filtration}
 # Classical QC
 ncol(seu) #2474
 seu_subset <- subset(seu, subset = (nCount_RNA > counts_thresholds[1]) & (nCount_RNA < counts_thresholds[2]) & (nFeature_RNA > features_thresholds[1]) & (nFeature_RNA < features_thresholds[2]) & (percent.mt < 15))
@@ -262,7 +287,7 @@ rm(seu)
 
 -   This filtration step is essential since lowly-expressed genes can come up as variable genes in subsequent steps and will skew the results of the analysis if not removed early.
 
-```{r}
+```{r Gene-QC}
 nrow(seu_subset) # 31053
 filter3 <- function(seurat){
   #Threshold
@@ -296,7 +321,7 @@ nrow(seu_subset) # 16229
 
 -   Note that the genes listed in `cc.genes.updated.2019` are for homo sapiens. We have converted these genes to their mouse equivalent in `cc.genes.mouse.rds`.
 
-```{r}
+```{r Normalisation-Cell-Cycle-Scoring}
 # Normalisation, Variable Feature Selection, Data Scaling
 seu_subset <- NormalizeData(seu_subset)
 seu_subset <- FindVariableFeatures(seu_subset)
@@ -310,7 +335,6 @@ seu_subset <- CellCycleScoring(seu_subset,
                         s.features = cc.genes.mouse$s.genes, 
                         g2m.features = cc.genes.mouse$g2m.genes, 
                         set.ident = TRUE)
-
 table(seu_subset$Phase)
 ```
 
@@ -320,14 +344,14 @@ table(seu_subset$Phase)
 
 -   Here, we will use data normalized with [**SCTransform**](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1874-1) for visualisation and clustering; `SCTransform` has become the standard for normalisation, variable feature selection, and scaling in seurat, and its results are going to be crucial for subsequent steps in the pipeline.
 
-```{r}
+```{r SCTransform}
 # SCTransform
 seu_subset <- suppressWarnings(SCTransform(object = seu_subset, variable.features.n = 3000))
 ```
 
 Notice at this point we have two assays in our data. The active assay is **SCT** **(SCTransform-Normalized data)**.
 
-```{r}
+```{r Assays}
 # Available Assays
 seu_subset@assays
 
@@ -343,14 +367,25 @@ seu_subset@active.assay
 
 -   PCA is also a good QC step that might point to systematic biases.
 
-```{r, fig.height=4, fig.width=4}
+```{r PCA, fig.height=6, fig.width=6}
 # PCA
 seu_subset <- RunPCA(seu_subset)
 
 # Visualisation
-do_DimPlot(seu_subset, group.by = "Phase", plot.title = "Phase")
-do_DimPlot(seu_subset, group.by = "batch", plot.title = "Batch")
-do_DimPlot(seu_subset, group.by = "condition", plot.title = "Condition")
+do_DimPlot(seu_subset, group.by = "Phase", pt.size = 1.5, plot.title = "Phase")
+ggsave(filename = "Write/Figures/Cell Cycle Phase PCA.tiff",
+       height = 10,
+       width = 15)
+
+do_DimPlot(seu_subset, group.by = "batch", pt.size = 1.5, plot.title = "Batch")
+ggsave(filename = "Write/Figures/Batch PCA.tiff",
+       height = 10,
+       width = 15)
+
+do_DimPlot(seu_subset, group.by = "condition", pt.size = 1.5, plot.title = "Condition")
+ggsave(filename = "Write/Figures/Condition PCA.tiff",
+       height = 10,
+       width = 15)
 ```
 
 ### 6.1.1. Checking for Technical Variation
@@ -359,7 +394,7 @@ do_DimPlot(seu_subset, group.by = "condition", plot.title = "Condition")
 
 -   Here, we will be plotting library size, total number of features, percentage mitochondrial genes, and batch against PCs 1-2 to see if these technical factors are a significant driver of the variation in the data. We will also be plotting cell cycle phase as well as our experimental condition of interest.
 
-```{r, fig.height=4, fig.width=4}
+```{r PCA-QC, fig.height=6, fig.width=6}
 # Technical Factors
 ## Library Size
 do_FeaturePlot(seu_subset, 
@@ -367,7 +402,12 @@ do_FeaturePlot(seu_subset,
         features = "nCount_RNA", 
         dims = c(1,2),
         viridis_color_map = "B",
-        viridis_direction = -1)
+        viridis_direction = -1, 
+        pt.size = 1.5,
+        plot.title = "Library Size")
+ggsave(filename = "Write/Figures/Library Size PCA.tiff",
+       height = 10,
+       width = 15)
 
 ## Total Number of Features
 do_FeaturePlot(seu_subset, 
@@ -375,7 +415,12 @@ do_FeaturePlot(seu_subset,
         features = "nFeature_RNA", 
         dims = c(1,2),
         viridis_color_map = "B",
-        viridis_direction = -1)
+        viridis_direction = -1,
+        pt.size = 1.5, 
+        plot.title = "Total Features")
+ggsave(filename = "Write/Figures/Total Features PCA.tiff",
+       height = 10,
+       width = 15)
 
 ## Percentage MT
 do_FeaturePlot(seu_subset, 
@@ -383,20 +428,11 @@ do_FeaturePlot(seu_subset,
         features = "percent.mt", 
         dims = c(1,2),
         viridis_color_map = "B",
-        viridis_direction = -1)
-
-## Cell Cycle Phase
-do_DimPlot(seu_subset, 
-           reduction = "pca", 
-           dims = c(1,2), 
-           group.by = "Phase")
-
-## Batch
-do_DimPlot(seu_subset, 
-           dims = c(1,2), 
-           group.by = "batch")
-
-
+        viridis_direction = -1, pt.size = 1.5,
+        plot.title = "% Mitochondrial Genes")
+ggsave(filename = "Write/Figures/Percentage Mitochondrial Genes PCA.tiff",
+       height = 10,
+       width = 15)
 ```
 
 -   From the above figures, we notice the following:
@@ -411,7 +447,7 @@ do_DimPlot(seu_subset,
 
 -   This result is not surprising given the dominant effect of the cell cycle on the variation in the data, so that is why the next section will take care of cell cycle regression before proceeding with subsequent steps in the analysis.
 
-```{r, fig.height=4, fig.width=4}
+```{r PCA-Condition, fig.height=6, fig.width=6}
 ## Condition
 do_DimPlot(seu_subset, 
         reduction = "pca", 
@@ -443,7 +479,7 @@ do_DimPlot(seu_subset,
 
 -   Given that the focus of this analysis is not cell cycle-driven variation, we will regress out cell cycle variation using `SCTransform()`, as is shown in the code below. We then run PCA on the updated count matrices and re-do the visualisations to ensure that cell cycle variation is no longer a primary driver.
 
-```{r, fig.height=4, fig.width=4}
+```{r Cell-Cylce-Regression, fig.height=6, fig.width=6}
 # SCTransform (Cell Cycle Regression)
 seu_subset <- suppressWarnings(SCTransform(object = seu_subset, 
                                            variable.features.n = 3000, 
@@ -460,17 +496,25 @@ seu_subset <- RunPCA(seu_subset,
 
     -   PC5 is now driven by our experimental condition.
 
-```{r, fig.height=4, fig.height=4}
+```{r PCA-CellCycleRegression, fig.height=6, fig.height=6}
 # Visualisation
 do_DimPlot(seu_subset, 
            reduction = "pca", 
            dims = c(1,2), 
-           group.by = "Phase")
+           group.by = "Phase", 
+           pt.size = 1.5)
+ggsave(filename = "Write/Figures/Cell Cycle Phase PCA (After Cell Cycle Regression).tiff",
+       height = 10,
+       width = 15)
 
 do_DimPlot(seu_subset, 
         reduction = "pca", 
         dims = c(4,5), 
-        group.by = "condition")
+        group.by = "condition", 
+        pt.size = 1.5)
+ggsave(filename = "Write/Figures/Condition PCA (After Cell Cycle Regression).tiff",
+       height = 10,
+       width = 15)
 ```
 
 ### 6.1.4. Elbow Plot
@@ -479,7 +523,7 @@ do_DimPlot(seu_subset,
 
 -   To define the optimal number of PCs to include for UMAP, an elbow plot is used to identify the threshold for PCA beyond which PCs are no longer representing any significant variation and are likely dominated by technical variance.
 
-```{r}
+```{r ElbowPlot}
 # Elbow Plot
 ElbowPlot(seu_subset, 
           ndims = 40)
@@ -490,7 +534,7 @@ pcs_use <- 1:20
 
 ### 6.2.1. UMAP Run
 
-```{r}
+```{r UMAP-Run}
 # UMAP
 seu_subset <- RunUMAP(seu_subset, 
                       dims = pcs_use)
@@ -498,17 +542,25 @@ seu_subset <- RunUMAP(seu_subset,
 
 ### 6.2.2. UMAP Results Visualisation
 
-```{r, fig.height=6, fig.width=7}
+```{r UMAP-Viz, fig.height=6, fig.width=6}
 # Visualisation
 ## Experimental Condition
 do_DimPlot(seu_subset, 
            reduction = "umap", 
-           group.by = "condition")
+           group.by = "condition", 
+           pt.size = 1.5)
+ggsave(filename = "Write/Figures/Condition UMAP.tiff",
+       height = 10,
+       width = 15)
 
 ## Cell Cycle Phase
 do_DimPlot(seu_subset, 
            reduction = "umap", 
-           group.by = "Phase")
+           group.by = "Phase", 
+           pt.size = 1.5)
+ggsave(filename = "Write/Figures/Cell Cycle Phase UMAP.tiff",
+       height = 10,
+       width = 15)
 ```
 
 # 7. Clustering
@@ -523,7 +575,7 @@ do_DimPlot(seu_subset,
 
     -   To remedy this issue, we compute clustering results using different resolution values ranging from 0 to 1, and we visualise these results using clustering trees. Clustering trees will be explained in the next section
 
-```{r}
+```{r Clustering}
 for(i in seq(0,1,0.1)){
 seu_subset <- seu_subset %>%
   FindNeighbors(reduction = "pca",
@@ -548,7 +600,7 @@ seu_subset <- seu_subset %>%
 
 -   Based on the results of the clustering trees, the final clustering resolution we are going with is 0.2, which gives us a total of 3 clusters.
 
-```{r, fig.height=10, fig.width=15}
+```{r Clustering-Trees, fig.height=10, fig.width=15}
 #Clustering Tree (with resolutions)
 c1 <- clustree::clustree(x = seu_subset) + 
   guides(edge_colour = FALSE, edge_alpha = FALSE) +
@@ -561,6 +613,9 @@ c2 <- clustree::clustree(x = seu_subset,
   theme(legend.position = "bottom") + 
   scale_color_viridis_c(option = "B")
 c1 + c2
+ggsave("Write/Figures/Clustrees.tiff",
+       height = 10,
+       width = 15)
 
 # Final Clustering Resolution
 seu_subset <- seu_subset %>%
@@ -579,15 +634,22 @@ seu_subset <- seu_subset %>%
 
     -   Cluster 0 is a SCRAMBLED cluster.
 
-```{r, fig.height=6, fig.width=7}
+```{r Clustering-Results-Viz, fig.height=6, fig.width=7}
 p1 <- do_DimPlot(seu_subset, 
            reduction = "umap", 
            group.by = "seurat_clusters",
-           label = T)
+           label = T, 
+           pt.size = 1.5)
+ggsave(filename = "Write/Figures/Seurat Clusters UMAP.tiff",
+       plot = p1,
+       height = 10,
+       width = 10)
+
 p2 <- do_DimPlot(seu_subset, 
            reduction = "umap", 
            group.by = "condition",
-           label = T)
+           label = T, 
+           pt.size = 1.5)
 p1 + p2
 ```
 
@@ -597,21 +659,31 @@ p1 + p2
 
 -   Here, we notice **Hoxc8** being deferentially expressed in SCRAMBLED cells, and **Gstp1** in WT cells (in particular WT cells in cluster 1).
 
-```{r fig.height=10, fig.width=20}
+```{r Features-Viz-UMAP,fig.height=20, fig.width=20}
 # Feature Plots
 do_FeaturePlot(sample = seu_subset, 
             features = c("Fos", "Gria3", "Junb", "Trap1a", "Gstp1", "Nap1l5"), 
             reduction = "umap", 
             ncol = 3,
             viridis_direction = -1, 
-            viridis_color_map = "B")
+            viridis_color_map = "B", pt.size = 1.5)
+ggsave(filename = "Write/Figures/Features_FeaturePlots.tiff",
+       height = 15,
+       width = 20)
+```
 
+
+```{r Feature-Viz-Violin, fig.height=10, fig.width=20}
 # Violin Plots
 VlnPlot(seu_subset, 
         features = c("Fos", "Gria3", "Junb", "Trap1a", "Gstp1", "Nap1l5"), 
-        ncol = 3, group.by = "condition", 
-        pt.size = 0.001, 
+        ncol = 3, 
+        group.by = "condition", 
+        pt.size = 1, 
         assay = "RNA")
+ggsave(filename = "Write/Figures/Features_ViolinPlots.tiff",
+       height = 15,
+       width = 20)
 ```
 
 # 9. Differential Expression Analysis (DEA)
@@ -620,11 +692,14 @@ VlnPlot(seu_subset,
 
 -   In this analysis, we are interested in DEA markers for our clusters as well as DEA results for WT vs SCRAMBLED.
 
-```{r}
+```{r DEA}
 # Cluster Markers
 ClusterMarkers <- FindAllMarkers(object = seu_subset,
                                  logfc.threshold = 0.25,
                                  min.pct = 0.25) %>% dplyr::filter(p_val_adj < 0.05)
+write_csv(x = ClusterMarkers,
+          file = "Write/Tables/ClusterMarkers.csv")
+
 # Condition Markers
 ConditionMarkers <- FindMarkers(object = seu_subset,
                                 ident.1 = "SCRAMBLED", 
@@ -632,7 +707,93 @@ ConditionMarkers <- FindMarkers(object = seu_subset,
                                 group.by = "condition",
                                 logfc.threshold = 0.25, 
                                 min.pct = 0.25) %>% dplyr::filter(p_val_adj < 0.05)
+write_csv(x = ConditionMarkers,
+          file = "Write/Tables/ConditionMarkers.csv")
 ```
+
+<!-- # 10. Gene Annotation -->
+
+<!-- * Following identification of DEA markers, the next step is the annotation of the results to convert gene names into ensembl ids and entrezids for compatibility wiht subsequent pathway enrichement analysis.  -->
+
+<!-- * This is a crucial step because entrezids and ensembl ids are relatively more stable than gene names, the latter having a higher tendency to change. -->
+
+<!-- ```{r} -->
+<!-- # Cluster Markers -->
+<!-- ## Ensembl Id Annotation -->
+<!-- ClusterMarkers$ensgenes <- AnnotationDbi::mapIds(x = org.Mm.eg.db, -->
+<!--                                     keys = ClusterMarkers$gene, -->
+<!--                                     keytype = "SYMBOL",  -->
+<!--                                     column = "ENSEMBL", -->
+<!--                                     multiVals = "first") -->
+<!-- ## Entrez Id Annotation -->
+<!-- ClusterMarkers$entrezid <- AnnotationDbi::mapIds(x = org.Mm.eg.db, -->
+<!--                                     keys = ClusterMarkers$gene, -->
+<!--                                     keytype = "SYMBOL",  -->
+<!--                                     column = "ENTREZID", -->
+<!--                                     multiVals = "first") -->
+
+<!-- ## NA Values Removal -->
+<!-- ClusterMarkers <- ClusterMarkers %>% na.omit() -->
+
+<!-- # Condition Markers -->
+<!-- ConditionMarkers <- ConditionMarkers %>% rownames_to_column("gene") -->
+
+<!-- ## Ensembl Id Annotation -->
+<!-- ConditionMarkers$ensgenes <- AnnotationDbi::mapIds(x = org.Mm.eg.db, -->
+<!--                                     keys = ConditionMarkers$gene, -->
+<!--                                     keytype = "SYMBOL",  -->
+<!--                                     column = "ENSEMBL", -->
+<!--                                     multiVals = "first") -->
+<!-- ## Entrez Id Annotation -->
+<!-- ConditionMarkers$entrezid <- AnnotationDbi::mapIds(x = org.Mm.eg.db, -->
+<!--                                     keys = ConditionMarkers$gene, -->
+<!--                                     keytype = "SYMBOL",  -->
+<!--                                     column = "ENTREZID", -->
+<!--                                     multiVals = "first") -->
+
+<!-- ## NA Values Removal -->
+<!-- ConditionMarkers <- ConditionMarkers %>% na.omit() -->
+<!-- ``` -->
+
+
+
+<!-- # 11. Pathway Enrichment Analysis -->
+
+<!-- ## 11.1. Gene Set Enrichment Analysis (GO Terms) -->
+
+<!-- ```{r} -->
+<!-- # Function -->
+<!-- gsea_go_res <- function(results_df){ -->
+<!--   results_df <- results_df %>% arrange(desc(avg_log2FC)) -->
+<!--   gene_list <- structure(results_df$avg_log2FC, names = results_df$entrezid) -->
+<!--   res <- gseGO(geneList = gene_list, -->
+<!--         OrgDb = org.Mm.eg.db, -->
+<!--         ont = "BP", -->
+<!--         keyType = "ENTREZID",  -->
+<!--         eps = 0) %>% setReadable(OrgDb = org.Mm.eg.db, -->
+<!--                                  keyType = "ENTREZID") -->
+<!--   return(res) -->
+<!-- } -->
+<!-- # Markers List -->
+<!-- ClusterMarkers %>% dplyr::group_by(cluster) %>% group_split() -->
+<!-- MarkerList <-  -->
+
+<!-- # map -->
+
+
+<!-- gseGO_Results <- map(.x = list(Clusters = ClusterMarkers, Conditions = ConditionMarkers), .f = gsea_go_res) -->
+<!-- ``` -->
+
+<!-- ## 11.2. Visualisation -->
+
+<!-- ```{r} -->
+<!-- # dotplot -->
+<!-- gseGO_Results_Vis <- map(gseGO_Results,  -->
+<!--     function(x){enrichplot::dotplot(object = x)}) -->
+<!-- gseGO_Results_Vis -->
+<!-- ``` -->
+
+
 
 # Session Information
 
@@ -640,6 +801,6 @@ ConditionMarkers <- FindMarkers(object = seu_subset,
 
 -   The `sessionInfo()` includes information about the version of R used, the packages loaded in, and their current version.
 
-```{r}
+```{r Session-Information}
 sessionInfo()
 ```
