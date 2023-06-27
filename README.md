@@ -21,10 +21,10 @@ Any reuse of the course materials, data or code is encouraged with due acknowled
 - [Dr Alena Shkumatava](https://institut-curie.org/personne/alena-shkumatava), Institut Curie, France
 
 ## Practicals
-[Enright Lab Practicals](https://github.com/EnrightLab/Courses-and-Practicals/tree/master/WTAC_RNA_Transcriptomics_2023)
-[Bulk RNA-Seq Practical](https://github.com/WCSCourses/RNATrans_23/tree/main/modules/Bulk%20RNA-Seq)
-[microRNA Practical](https://github.com/WCSCourses/RNATrans_23/tree/main/modules/microRNA%20targets)
-[SIngle Cell RNA-Seq Practical](https://github.com/WCSCourses/RNATrans_23/tree/main/modules/scRNA-Seq)
+- [Enright Lab Practicals](https://github.com/EnrightLab/Courses-and-Practicals/tree/master/WTAC_RNA_Transcriptomics_2023)
+- [Bulk RNA-Seq Practical](https://github.com/WCSCourses/RNATrans_23/tree/main/modules/Bulk%20RNA-Seq)
+- [microRNA Practical](https://github.com/WCSCourses/RNATrans_23/tree/main/modules/microRNA%20targets)
+- [SIngle Cell RNA-Seq Practical](https://github.com/WCSCourses/RNATrans_23/tree/main/modules/scRNA-Seq)
 
 ******
 ## License
